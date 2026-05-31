@@ -38,27 +38,41 @@ def get_exchange_rate(ccy, from_date, to_date):
         st.error(f"Loi khi lay du lieu {ccy}: {e}")
         return None
 
+def find_list_in_response(data):
+    """Recursively search for the first list in a nested dict/list structure"""
+    if isinstance(data, list) and len(data) > 0:
+        return data
+    if isinstance(data, dict):
+        for key in ["data", "Data", "result", "Result", "items", "Items",
+                    "listCurrencyRate", "currencyRates", "rates", "Rates",
+                    "listData", "ListData"]:
+            val = data.get(key)
+            if isinstance(val, list) and len(val) > 0:
+                return val
+        # Search all values recursively
+        for v in data.values():
+            found = find_list_in_response(v)
+            if found:
+                return found
+    return []
+
 def parse_rates(data, ccy):
     rows = []
     if not data:
         return rows
-    # Try to find list in response
-    if isinstance(data, list):
-        items = data
-    elif isinstance(data, dict):
-        for key in ["data", "Data", "result", "Result", "items", "Items", "listCurrencyRate"]:
-            val = data.get(key)
-            if isinstance(val, list):
-                items = val
-                break
-        else:
-            items = []
-    else:
-        return rows
+    items = find_list_in_response(data)
     for item in items:
-        date_val = item.get("CREATED_DATE", item.get("date", item.get("Date", "")))
-        buy = item.get("MUA_CK", item.get("buyCK", item.get("BUY_CK", item.get("buy", ""))))
-        sell = item.get("BAN_CK", item.get("sellCK", item.get("SELL_CK", item.get("sell", ""))))
+        if not isinstance(item, dict):
+            continue
+        date_val = (item.get("CREATED_DATE") or item.get("DATE") or
+                    item.get("date") or item.get("Date") or
+                    item.get("ngay") or "")
+        buy = (item.get("MUA_CK") or item.get("BUY_CK") or
+               item.get("buyCK") or item.get("buy") or
+               item.get("muaCK") or "")
+        sell = (item.get("BAN_CK") or item.get("SELL_CK") or
+                item.get("sellCK") or item.get("sell") or
+                item.get("banCK") or "")
         rows.append({"Ngay": date_val, "Loai tien": ccy, "Mua CK": buy, "Ban CK": sell})
     return rows
 
@@ -75,12 +89,17 @@ with col1:
 with col2:
     to_date = st.date_input("Den ngay", value=default_to, format="YYYY/MM/DD")
 
+debug_mode = st.checkbox("Hien thi du lieu goc (debug)")
+
 if st.button("Lay ti gia", type="primary"):
     all_rows = []
     progress = st.progress(0, text="Dang lay du lieu...")
     for i, ccy in enumerate(CURRENCIES):
         progress.progress((i + 1) / len(CURRENCIES), text=f"Dang lay {ccy}...")
         data = get_exchange_rate(ccy, from_date, to_date)
+        if debug_mode and i == 0 and data:
+            with st.expander(f"Raw API response ({ccy})"):
+                st.json(data)
         rows = parse_rates(data, ccy)
         all_rows.extend(rows)
     progress.empty()
@@ -102,3 +121,5 @@ if st.button("Lay ti gia", type="primary"):
         )
     else:
         st.warning("Khong co du lieu trong khoang thoi gian nay.")
+        if not debug_mode:
+            st.info("Bat checkbox 'Hien thi du lieu goc (debug)' de xem response tu API.")
