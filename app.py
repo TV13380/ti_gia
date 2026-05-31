@@ -6,8 +6,11 @@ from io import BytesIO
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-# Install Playwright chromium browser (required on Streamlit Cloud)
-os.system("playwright install chromium")
+# Install Playwright chromium (required on Streamlit Cloud)
+subprocess.run(
+    [sys.executable, "-m", "playwright", "install", "chromium"],
+    check=False
+)
 
 from playwright.async_api import async_playwright
 
