@@ -6,14 +6,12 @@ from io import BytesIO
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
+# Install Playwright browsers at startup (required on Streamlit Cloud)
+subprocess.run(
+    ["playwright", "install", "chromium", "--with-deps"],
+    capture_output=True
+)
 
-@st.cache_resource
-def install_playwright():
-    subprocess.run(["playwright", "install", "chromium", "--with-deps"],
-                   capture_output=True)
-
-
-install_playwright()
 from playwright.async_api import async_playwright
 
 URL = "https://tpb.vn/cong-cu-tinh-toan/ty-gia-ngoai-te"
@@ -78,12 +76,10 @@ async def scrape_one_day(page, date_obj):
     """
     await page.evaluate(js_sel)
     await page.wait_for_timeout(300)
-    clicked = False
     for btn_sel in ["button:has-text('Xem ti gia')", "a:has-text('Xem ti gia')"]:
         try:
             if await page.locator(btn_sel).count() > 0:
                 await page.locator(btn_sel).first.click(timeout=5000)
-                clicked = True
                 break
         except:
             pass
