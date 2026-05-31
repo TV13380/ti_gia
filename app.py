@@ -5,27 +5,35 @@ from datetime import datetime, timedelta
 
 # TPBank API endpoint
 API_URL = "https://tpb.vn/CMCWPCoreAPI/api/public-service/get-currency-rate-core"
+SOURCE_URL = "https://tpb.vn/cong-cu-tinh-toan/ty-gia-ngoai-te"
 TOKEN = "Uacgq6WsEchmCnWQJNB_S5o"
 
 CURRENCIES = ["USD", "JPY", "AUD", "SGD"]
 
+HEADERS = {
+    "accept": "application/json, text/plain, */*",
+    "content-type": "application/json",
+    "origin": "https://tpb.vn",
+    "referer": SOURCE_URL,
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+def to_api_date(d):
+    """Convert date to DDMMYYYY format required by TPBank API"""
+    return d.strftime("%d%m%Y")
+
 def get_exchange_rate(ccy, from_date, to_date):
     payload = {
         "type": "1",
-        "FROM_DATE": from_date,
-        "TO_DATE": to_date,
+        "FROM_DATE": to_api_date(from_date),
+        "TO_DATE": to_api_date(to_date),
         "CCY": ccy,
         "token": TOKEN
     }
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
     try:
-        resp = requests.post(API_URL, json=payload, headers=headers, timeout=15)
+        resp = requests.post(API_URL, json=payload, headers=HEADERS, timeout=30)
         resp.raise_for_status()
-        data = resp.json()
-        return data
+        return resp.json()
     except Exception as e:
         st.error(f"Loi khi lay du lieu {ccy}: {e}")
         return None
@@ -34,20 +42,28 @@ def parse_rates(data, ccy):
     rows = []
     if not data:
         return rows
-    items = data.get("data", data) if isinstance(data, dict) else data
-    if isinstance(items, dict):
-        items = items.get("listCurrencyRate", items.get("rates", []))
-    if not isinstance(items, list):
+    # Try to find list in response
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        for key in ["data", "Data", "result", "Result", "items", "Items", "listCurrencyRate"]:
+            val = data.get(key)
+            if isinstance(val, list):
+                items = val
+                break
+        else:
+            items = []
+    else:
         return rows
     for item in items:
-        date_val = item.get("CREATED_DATE", item.get("date", ""))
-        buy = item.get("MUA_CK", item.get("buyCK", item.get("buy", "")))
-        sell = item.get("BAN_CK", item.get("sellCK", item.get("sell", "")))
+        date_val = item.get("CREATED_DATE", item.get("date", item.get("Date", "")))
+        buy = item.get("MUA_CK", item.get("buyCK", item.get("BUY_CK", item.get("buy", ""))))
+        sell = item.get("BAN_CK", item.get("sellCK", item.get("SELL_CK", item.get("sell", ""))))
         rows.append({"Ngay": date_val, "Loai tien": ccy, "Mua CK": buy, "Ban CK": sell})
     return rows
 
-st.set_page_config(page_title="Ti gia TPBank", page_icon="💱", layout="wide")
-st.title("💱🔄 Ti gia ngoai te TPBank")
+st.set_page_config(page_title="Ti gia TPBank", page_icon="\U0001f4b1", layout="wide")
+st.title("\U0001f4b1\U0001f504 Ti gia ngoai te TPBank")
 st.caption("Lay ti gia mua/ban chuyen khoan: USD · JPY · AUD · SGD")
 
 col1, col2 = st.columns(2)
@@ -60,13 +76,11 @@ with col2:
     to_date = st.date_input("Den ngay", value=default_to, format="YYYY/MM/DD")
 
 if st.button("Lay ti gia", type="primary"):
-    from_str = from_date.strftime("%Y-%m-%d")
-    to_str = to_date.strftime("%Y-%m-%d")
     all_rows = []
     progress = st.progress(0, text="Dang lay du lieu...")
     for i, ccy in enumerate(CURRENCIES):
         progress.progress((i + 1) / len(CURRENCIES), text=f"Dang lay {ccy}...")
-        data = get_exchange_rate(ccy, from_str, to_str)
+        data = get_exchange_rate(ccy, from_date, to_date)
         rows = parse_rates(data, ccy)
         all_rows.extend(rows)
     progress.empty()
@@ -78,11 +92,13 @@ if st.button("Lay ti gia", type="primary"):
             if not df_ccy.empty:
                 st.subheader(f"Ti gia {ccy}")
                 st.dataframe(df_ccy.reset_index(drop=True), use_container_width=True)
+        from_str = from_date.strftime("%Y-%m-%d")
+        to_str = to_date.strftime("%Y-%m-%d")
         st.download_button(
-            label="Tai xuong Excel",
+            label="Tai xuong CSV",
             data=df.to_csv(index=False).encode("utf-8-sig"),
             file_name=f"ti_gia_tpbank_{from_str}_{to_str}.csv",
             mime="text/csv"
         )
     else:
-        st.warning("Khong co du lieu trong khoang thoi gian nay. Thu chon khoang khac.")
+        st.warning("Khong co du lieu trong khoang thoi gian nay.")
